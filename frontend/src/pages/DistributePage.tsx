@@ -96,6 +96,7 @@ export function DistributePage() {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const [savedSlug, setSavedSlug] = useState<string | undefined>();
   const [pending, setPending] = useState<{
     airdrop: Address;
@@ -207,6 +208,7 @@ export function DistributePage() {
   async function runAirdrop() {
     if (!address || rows.length === 0 || errors.length > 0 || resolving.length > 0 || !publicClient) return;
     setErrMsg(null);
+    setSaveNote(null);
     setCampaign(null);
     setProgress({ done: 0, total: 0 });
     try {
@@ -375,10 +377,18 @@ export function DistributePage() {
           auth,
         });
         setSavedSlug(res.slug);
+        setSaveNote(null);
         ok = true;
       } catch (e) {
         console.warn("campaign save failed", e);
+        setSaveNote(
+          `The campaign store rejected the save: ${e instanceof Error ? e.message : "unknown error"}. Your funds and the link below are safe.`,
+        );
       }
+    } else {
+      setSaveNote(
+        "You declined the signature that records this campaign, so it won't appear in Your campaigns. The claim link below is self-contained - copy it now.",
+      );
     }
     setSaved(ok);
     setPending(null);
@@ -471,6 +481,7 @@ export function DistributePage() {
     setName("");
     setCampaign(null);
     setSaved(false);
+    setSaveNote(null);
     setSavedSlug(undefined);
     setPending(null);
     setDisperseTx(undefined);
@@ -581,7 +592,7 @@ export function DistributePage() {
             <div className="mt-6 space-y-4">
               <AnimatePresence>
                 {mode === "airdrop" && campaign && (
-                  <Results campaign={campaign} count={rows.length} saved={saved} slug={savedSlug} />
+                  <Results campaign={campaign} count={rows.length} saved={saved} slug={savedSlug} note={saveNote} />
                 )}
                 {mode === "disperse" && (
                   <DisperseResult hash={disperseTx} count={rows.length} total={total} symbol={symbol} decimals={decimals} />
@@ -1131,11 +1142,13 @@ function Results({
   count,
   saved,
   slug,
+  note,
 }: {
   campaign: Campaign;
   count: number;
   saved: boolean;
   slug?: string;
+  note?: string | null;
 }) {
   const link = saved ? claimLinkFor({ slug, airdrop: campaign.airdrop }) : portalUrl(campaign);
   return (
@@ -1156,8 +1169,8 @@ function Results({
         </div>
       ) : (
         <div className="mt-3 rounded-md border border-neg/40 bg-neg/5 px-3 py-2 text-[11px] text-fg">
-          <strong className="text-neg">Not saved to the campaign store.</strong> This is a self-contained
-          link - save it now, it can't be re-generated.
+          <strong className="text-neg">Not saved to the campaign store.</strong>{" "}
+          {note ?? "This is a self-contained link - save it now, it can't be re-generated."}
         </div>
       )}
 

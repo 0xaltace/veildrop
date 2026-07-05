@@ -1,4 +1,4 @@
-import { handleApi } from "./_lib/handlers";
+import { handleApi } from "./_lib/handlers.js";
 
 // Vercel Node function. POST { airdrop } marks a campaign refunded/closed.
 interface VReq {

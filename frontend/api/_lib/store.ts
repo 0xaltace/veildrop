@@ -66,7 +66,7 @@ function upstash(): Store | null {
       body: JSON.stringify(command),
     });
     if (!r.ok) throw new Error(`upstash ${r.status}`);
-    return (await r.json()).result as T;
+    return ((await r.json()) as { result: T }).result;
   }
 
   // All commands in one HTTPS round trip. A campaign save touches one key per

@@ -1,4 +1,4 @@
-import { handleApi } from "./_lib/handlers";
+import { handleApi } from "./_lib/handlers.js";
 
 // Vercel Node function. POST records a confidential token the user created/wrapped.
 interface VReq {

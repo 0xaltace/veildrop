@@ -1,4 +1,4 @@
-import { handleApi } from "./_lib/handlers";
+import { handleApi } from "./_lib/handlers.js";
 
 // Vercel Node function. GET (?owner=) lists tokens a wallet created/wrapped.
 interface VReq {

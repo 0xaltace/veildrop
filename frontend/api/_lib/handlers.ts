@@ -1,7 +1,7 @@
 import { createPublicClient, http, recoverMessageAddress, type Hex } from "viem";
 import { sepolia } from "viem/chains";
 
-import { getStore, type CampaignRecord, type StoredEntry, type TokenRecord } from "./store";
+import { getStore, type CampaignRecord, type StoredEntry, type TokenRecord } from "./store.js";
 
 export interface ApiRequest {
   method: string;
