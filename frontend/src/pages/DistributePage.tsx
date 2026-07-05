@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { Link, useSearchParams } from "react-router-dom";
 import { createWalletClient, getAddress, http, isAddress, toHex, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { useAccount, usePublicClient, useSignMessage, useWalletClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignMessage, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { sepolia } from "wagmi/chains";
 
 import { CipherValue } from "../components/viz/CipherValue";
@@ -70,10 +70,17 @@ const SAMPLE =
 const STEPS = ["Token", "Recipients", "Method", "Review", "Send"] as const;
 
 export function DistributePage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { open } = useWalletModal();
+  const { switchChain, isPending: switching } = useSwitchChain();
   const publicClient = usePublicClient();
   const [searchParams] = useSearchParams();
+
+  // Writes need a wallet client scoped to Sepolia. wagmi only configures Sepolia,
+  // so a wallet on any other network reports `isConnected` but yields NO wallet
+  // client - every TokenOps write then throws MissingWalletClientError. Gate the
+  // whole flow on the right chain so that can never surface as a raw SDK error.
+  const wrongChain = isConnected && chainId !== sepolia.id;
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<"airdrop" | "disperse">("airdrop");
@@ -97,6 +104,11 @@ export function DistributePage() {
     auth: Hex | null;
   } | null>(null);
   const [disperseTx, setDisperseTx] = useState<Hex | undefined>();
+  // True once a disperse tx has been broadcast. Disperse isn't idempotent and,
+  // unlike airdrop, has no on-chain "already funded" marker - so if the send
+  // errors AFTER broadcast (e.g. receipt-wait timeout) we must not offer a plain
+  // re-send button, or the user could pay everyone twice.
+  const [disperseSent, setDisperseSent] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [windowDays, setWindowDays] = useState<number | "custom">(7);
   const [customEnd, setCustomEnd] = useState("");
@@ -392,6 +404,7 @@ export function DistributePage() {
     if (!address || rows.length === 0 || errors.length > 0 || resolving.length > 0 || !publicClient) return;
     setErrMsg(null);
     setDisperseTx(undefined);
+    setDisperseSent(false);
     setProgress({ done: 0, total: 0 });
     try {
       // Authorize the disperse singleton to pull tokens (once per token).
@@ -413,6 +426,7 @@ export function DistributePage() {
       }
 
       setPhase("dispersing");
+      setDisperseSent(true);
       const res = await disperse.mutateAsync({
         token: tokenAddr,
         mode: "direct",
@@ -460,6 +474,7 @@ export function DistributePage() {
     setSavedSlug(undefined);
     setPending(null);
     setDisperseTx(undefined);
+    setDisperseSent(false);
     setErrMsg(null);
     setPreviewPage(0);
     setProgress({ done: 0, total: 0 });
@@ -538,6 +553,21 @@ export function DistributePage() {
             Connect
           </button>
         </div>
+      ) : wrongChain ? (
+        <div className="sheet p-6 mt-6">
+          <span className="stamp text-neg">Wrong network</span>
+          <p className="text-sm text-muted mt-3">
+            Veildrop runs on the Sepolia testnet. Switch your wallet to Sepolia to draft and send a
+            distribution - sealing and funding both need a Sepolia wallet.
+          </p>
+          <button
+            className="btn-primary text-sm mt-4"
+            disabled={switching}
+            onClick={() => switchChain({ chainId: sepolia.id })}
+          >
+            {switching ? "Switching…" : "Switch to Sepolia"}
+          </button>
+        </div>
       ) : (
         <>
           <StepRail step={step} onJump={(s) => !executed && s < step && goStep(s)} />
@@ -587,6 +617,28 @@ export function DistributePage() {
                   </Link>
                 )}
               </div>
+            </div>
+          ) : phase === "error" && mode === "disperse" && disperseSent ? (
+            /* Disperse broadcast but didn't confirm. Don't offer a plain re-send -
+               it isn't idempotent and could pay everyone twice. */
+            <div className="panel border-neg/40 bg-neg/5 p-4 mt-6">
+              <div className="text-sm font-bold text-neg">Disperse didn't confirm</div>
+              <p className="text-xs text-muted mt-1">
+                Your wallet may still have broadcast the transaction.{" "}
+                {address && (
+                  <>
+                    Check your{" "}
+                    <a className="link" href={explorerAddr(address)} target="_blank" rel="noreferrer">
+                      recent activity ↗
+                    </a>{" "}
+                  </>
+                )}
+                before sending again - a second disperse would pay everyone twice.
+              </p>
+              {errMsg && <div className="text-xs text-neg mt-2">{errMsg}</div>}
+              <button className="btn-ghost text-xs mt-3" onClick={resetAll}>
+                Start over
+              </button>
             </div>
           ) : (
             <>

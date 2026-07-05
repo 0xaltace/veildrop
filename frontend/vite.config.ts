@@ -53,8 +53,12 @@ export default defineConfig({
   },
   server: {
     headers: {
+      // credentialless (not require-corp) still enables SharedArrayBuffer for the
+      // Zama relayer WASM, but doesn't block cross-origin resources - Google Fonts,
+      // the Coinbase/WalletConnect icons, and the WC QR modal all keep loading.
+      // Must match the Vercel headers in vercel.json.
       "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Embedder-Policy": "credentialless",
     },
     // Project lives on /mnt/c under WSL2 — inotify events don't cross the
     // filesystem boundary, so HMR needs polling or it serves stale bundles.
@@ -66,7 +70,7 @@ export default defineConfig({
   preview: {
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Embedder-Policy": "credentialless",
     },
   },
 });

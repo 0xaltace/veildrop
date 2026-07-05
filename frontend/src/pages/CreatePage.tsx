@@ -8,9 +8,11 @@ import {
   useDeployContract,
   useReadContract,
   useSignMessage,
+  useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
+import { sepolia } from "wagmi/chains";
 
 import { useWalletModal } from "../components/WalletModal";
 import { confidentialTokenAbi } from "../lib/abis";
@@ -45,9 +47,13 @@ async function registerToken(
 }
 
 export function CreatePage() {
-  const { isConnected } = useAccount();
+  const { isConnected, chainId } = useAccount();
   const { open } = useWalletModal();
+  const { switchChain, isPending: switching } = useSwitchChain();
   const [tab, setTab] = useState<"wrap" | "new">("new");
+  // Deploy/wrap/mint are all Sepolia writes; a wallet on another network reports
+  // connected but yields no wallet client. Gate before any write can be attempted.
+  const wrongChain = isConnected && chainId !== sepolia.id;
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
@@ -63,6 +69,20 @@ export function CreatePage() {
           <span className="text-sm text-muted">Connect a wallet on Sepolia to deploy a token.</span>
           <button className="btn-primary text-sm shrink-0" onClick={open}>
             Connect
+          </button>
+        </div>
+      ) : wrongChain ? (
+        <div className="sheet p-6 mt-6">
+          <span className="stamp text-neg">Wrong network</span>
+          <p className="text-sm text-muted mt-3">
+            Veildrop runs on the Sepolia testnet. Switch your wallet to Sepolia to deploy or wrap a token.
+          </p>
+          <button
+            className="btn-primary text-sm mt-4"
+            disabled={switching}
+            onClick={() => switchChain({ chainId: sepolia.id })}
+          >
+            {switching ? "Switching…" : "Switch to Sepolia"}
           </button>
         </div>
       ) : (

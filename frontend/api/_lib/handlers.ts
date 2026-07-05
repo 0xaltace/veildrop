@@ -32,8 +32,10 @@ const hasRoleAbi = [
   },
 ] as const;
 
-// Server-side Sepolia reads (first-save creator verification). SEPOLIA_RPC_URL is
-// optional - viem's default public endpoint is enough for one eth_call per save.
+// Server-side Sepolia reads (first-save creator verification). Set SEPOLIA_RPC_URL
+// to a dedicated endpoint in production - viem's default PUBLIC endpoint is heavily
+// rate-limited from Vercel's shared IPs, which is why the check below fails OPEN on
+// an RPC error rather than dropping the save.
 function rpcClient() {
   return createPublicClient({
     chain: sepolia,
@@ -67,30 +69,36 @@ async function verifySig(message: string, expectedSigner: string, auth: unknown)
   }
 }
 
-// First save binds the record to `creator` forever, so the claim proves control of
-// the airdrop itself, not just any wallet: airdrop records require the creator to
-// hold DEFAULT_ADMIN_ROLE on the clone; disperse history records (keyed by tx hash)
-// require the creator to be the tx sender. Retries cover the server RPC lagging the
-// client's RPC by a block or two right after deploy/submit.
-async function verifyOnChainCreator(rec: CampaignRecord): Promise<boolean> {
+// First save binds the record to `creator`, proving control of the airdrop itself,
+// not just any wallet: airdrop records require the creator to hold DEFAULT_ADMIN_ROLE
+// on the clone; disperse history records (keyed by tx hash) require the creator to be
+// the tx sender.
+//
+// Returns "denied" ONLY on a definite on-chain negative. An RPC that never answers
+// (rate-limited / lagging the client by a block or two) returns "allow" - failing
+// closed there would silently drop every legitimate campaign whenever the public
+// endpoint hiccups. The signature check already proves the caller controls the
+// creator wallet; this is a best-effort second factor, not the only gate.
+async function verifyOnChainCreator(rec: CampaignRecord): Promise<"allow" | "denied"> {
   const client = rpcClient();
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       if (rec.mode === "disperse") {
         const tx = await client.getTransaction({ hash: rec.airdrop as Hex });
-        return tx.from.toLowerCase() === rec.creator;
+        return tx.from.toLowerCase() === rec.creator ? "allow" : "denied";
       }
-      return await client.readContract({
+      const isAdmin = await client.readContract({
         address: rec.airdrop as `0x${string}`,
         abi: hasRoleAbi,
         functionName: "hasRole",
         args: [DEFAULT_ADMIN_ROLE, rec.creator as `0x${string}`],
       });
+      return isAdmin ? "allow" : "denied";
     } catch {
       await new Promise((r) => setTimeout(r, 1500));
     }
   }
-  return false;
+  return "allow"; // RPC unavailable - don't lose a legitimate save over infra flakiness
 }
 
 // Normalize + validate the entries map: address-shaped lowercase keys, well-formed
@@ -191,7 +199,7 @@ async function route(req: ApiRequest): Promise<ApiResult> {
     if (!(await verifySig(campaignAuthMessage(rec.airdrop), existing?.creator ?? rec.creator, b.auth))) {
       return { status: 401, json: { error: "missing or invalid creator signature" } };
     }
-    if (!existing && !(await verifyOnChainCreator(rec))) {
+    if (!existing && (await verifyOnChainCreator(rec)) === "denied") {
       return { status: 403, json: { error: "creator does not control this airdrop on-chain" } };
     }
     if (existing) {

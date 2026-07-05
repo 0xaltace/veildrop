@@ -2,7 +2,8 @@ import { useConfidentialBalance } from "@zama-fhe/react-sdk";
 import { motion } from "framer-motion";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { sepolia } from "wagmi/chains";
 
 import { CipherValue } from "../components/viz/CipherValue";
 import { useWalletModal } from "../components/WalletModal";
@@ -13,10 +14,14 @@ import { fmt6 } from "../lib/format";
 const PRESETS = [10_000n, 50_000n, 100_000n];
 
 export function FaucetPage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { open } = useWalletModal();
+  const { switchChain, isPending: switching } = useSwitchChain();
   const [amount, setAmount] = useState<bigint>(50_000n);
   const [revealed, setRevealed] = useState(false);
+  // Minting is a Sepolia write; a wallet on another network reports connected but
+  // has no wallet client. Gate so the mint button can't throw a raw wallet error.
+  const wrongChain = isConnected && chainId !== sepolia.id;
 
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
   const { isLoading: confirming, isSuccess: confirmed } = useWaitForTransactionReceipt({ hash });
@@ -99,6 +104,20 @@ export function FaucetPage() {
           <span className="text-sm text-muted">Connect a wallet on Sepolia to mint.</span>
           <button className="btn-primary text-sm shrink-0" onClick={open}>
             Connect
+          </button>
+        </div>
+      ) : wrongChain ? (
+        <div className="sheet p-6 mt-4">
+          <span className="stamp text-neg">Wrong network</span>
+          <p className="text-sm text-muted mt-3">
+            Veildrop runs on the Sepolia testnet. Switch your wallet to Sepolia to mint demo vUSD.
+          </p>
+          <button
+            className="btn-primary text-sm mt-4"
+            disabled={switching}
+            onClick={() => switchChain({ chainId: sepolia.id })}
+          >
+            {switching ? "Switching…" : "Switch to Sepolia"}
           </button>
         </div>
       ) : (
